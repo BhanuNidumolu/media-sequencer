@@ -23,18 +23,68 @@ its own sequence exactly where it would have been anyway.
 - **Frontend:** React (Vite)
 - **Persistence:** SQLite (embedded, single-file database)
 
-The sync mechanism was the part I found most interesting to design —
-getting every window to resume exactly where it should be, with no
-special-case "resume" logic, just falls out naturally from computing
-playback position as a function of elapsed time. I've explained the full
-reasoning below, along with the assumptions I made anywhere the spec left
-room for interpretation.
+Honestly, the sync part is what hooked me on this assignment — once I
+figured out that playback position could just be "elapsed time modulo
+playlist length" instead of some counter I had to babysit, a lot of the
+hard parts (resuming after sync, surviving a restart, two people
+clicking sync at once) just... stopped being problems. I've written up
+the full reasoning below, plus every assumption I made where the spec
+left room to interpret things differently.
 
-**A note on AI usage:** I used AI assistance for parts of the frontend
-(React components and styling) to move faster on UI plumbing, while the
-backend design — the sync algorithm, the storage layer, and the API
-contract — is my own work and reasoning, which is what I've written up
-in detail below.
+**A note on AI usage:** AI wrote most of the frontend components (the
+React structure, JSX, and styling in `App.jsx`, `WindowBox.jsx`,
+`AddMediaForm.jsx`, `SyncControl.jsx`) — I then went through and
+reviewed/adjusted them, fixed spots where they didn't match what the
+backend actually returns, and tested them against the real running app.
+The backend is a different story though — the sync algorithm, the
+storage layer, the API design, all of that's mine, and it's what I've
+put the most effort into explaining below.
+
+**A note on learning Go for this:** I come from Java/Spring Boot, so
+this was genuinely my first real Go project — got shortlisted and then
+realized I'd need to pick up a new language fast. Syntax wasn't really
+the hard part. What actually took getting used to was designing around
+explicit error returns instead of exceptions, and thinking about
+concurrency with goroutines/mutexes (`store.go`'s `sync.Mutex`) instead
+of letting a framework handle it for me. I ended up working through
+`currentItemForWindow`'s edge cases by hand — what happens right at
+t=0, exactly on an item boundary, after 500 loops — mostly to convince
+*myself* the time-based approach actually held up. That's also why I
+went and wrote real tests for those exact cases afterward (see "Running
+tests" below) — I wanted more than "it worked when I clicked around."
+
+---
+
+## Requirements checklist
+
+Mapped directly against the assignment brief, so it's easy to verify
+nothing was missed:
+
+| Requirement | Status | Where |
+|---|---|---|
+| React frontend | ✅ | `frontend/` |
+| Multiple display windows on screen | ✅ | `WindowBox.jsx`, rendered per-window in `App.jsx` |
+| Continuous playback per window, no stopping between items | ✅ | time-based `currentItemForWindow` + 1s polling in `App.jsx` |
+| Image, video, and blank/fallback support | ✅ | `WindowBox.jsx` |
+| Reflect playlist changes from backend | ✅ | `refreshWindows()` runs after every add |
+| Controls to add media + trigger sync | ✅ | `AddMediaForm.jsx`, `SyncControl.jsx` |
+| Golang backend | ✅ | `backend/` |
+| Persistent storage (candidate's choice) | ✅ | SQLite via `store.go` |
+| Dynamically add media to a window's list | ✅ | `POST /api/windows/{id}/media` |
+| Sync logic — one item shown on all windows | ✅ | `computeDisplay()`'s time-window override in `sync.go` |
+| 5-hour cycle, list repeats within it | ✅ (documented assumption) | `MaxCycleSeconds` in `models.go` — see "How sync behavior works" |
+| Blank only appears when explicitly configured | ✅ | seed data + `currentItemForWindow`'s per-item walk |
+| Deployed React frontend, live URL | ✅ | Vercel — see Live URLs above |
+| Deployed Go backend, live URL | ✅ | Render — see Live URLs above |
+| Seed data matching example windows/lists | ⚠️ see note | `seed.go` |
+| README: setup, sync explanation, deployment, assumptions, API docs | ✅ | this file |
+
+**Note on the seed-data row:** `seed.go` seeds 3 example windows with
+image/video/blank items covering every media type, but I want to flag
+this honestly rather than just claim a match — worth a final check
+against whatever specific example windows/lists were shown in the
+original brief, since I want to be sure my interpretation lines up
+exactly before the discussion round.
 
 ---
 
@@ -95,8 +145,8 @@ window falls back to its own time-based computation from step 1.
 The part I liked most about this approach: resuming after sync needed no
 special-case logic at all. No window's underlying position was ever
 touched, so once the sync ends it just continues exactly where the time
-formula says it should be — the "resume" behavior is really just the
-absence of an active override, not code I had to write separately.
+formula says it should be — "resume" is really just the *absence* of an
+active override, not code I had to go write separately.
 
 **On the 5-hour cycle:** I read "the total play size for each window
 must be treated as 5 hours" as a ceiling on the loop length rather than a
@@ -162,6 +212,26 @@ npm run dev
 ```
 Opens on `http://localhost:5173` and polls the backend every second for
 current playback state.
+
+---
+
+## Running tests
+
+The backend's Go test suite runs entirely inside Docker — no local Go
+install needed:
+
+```bash
+docker compose run --rm backend-tests
+```
+
+This builds a throwaway container (using `backend/Dockerfile.test`) from
+the same Go base image the real backend uses, and runs `go test ./... -v`
+against `sync_test.go`, `handlers_test.go`, and `store_test.go`. It's kept
+out of the normal `docker compose up` via a `test` profile, so it never
+starts alongside the actual backend/frontend services.
+
+If you do have Go installed locally and want a faster feedback loop while
+iterating, `cd backend && go test ./... -v` works the same way.
 
 ---
 
@@ -347,8 +417,10 @@ the core sync/playback problem, but would build next:
 - **Basic auth on the admin endpoints** (`add media`, `sync`, upload) —
   right now anyone with the backend URL can modify playlists or trigger
   sync, which is fine for this assignment but not for a real deployment.
-- **Tests.** I focused my time on getting the sync/timing logic correct
-  by hand-testing against the running app rather than writing automated
-  tests — a table-driven test for `currentItemForWindow` covering
-  playlist-boundary edge cases (item starts exactly at `position`, empty
-  playlist, single-item playlist) would be the first thing I'd add.
+- **More test coverage.** The current suite (33 tests) covers the sync
+  algorithm, HTTP validation, and the storage layer, including a
+  concurrency test for simultaneous writes. What's missing: frontend
+  component tests (React Testing Library), and an integration test that
+  spins up the real server and hits it over HTTP end-to-end rather than
+  through Go's `httptest` in-process — closer to how it actually behaves
+  in Docker.
