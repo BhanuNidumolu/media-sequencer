@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persists data/store.db on your machine across `docker compose down`.
+      - ./backend/data:/app/data
+    environment:
+      - FRONTEND_ORIGIN=http://localhost:5173
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser (not the container) calls this URL, so it must be
+        # something reachable from your machine - localhost + the port
+        # published above, not the internal docker service name.
+        VITE_API_URL: http://localhost:8080
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend

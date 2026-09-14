@@ -1,0 +1,19 @@
+# Backend
+backend/data/store.db
+backend/data/*.tmp
+backend/data/uploads/
+backend/mediasequencer
+backend/*.exe
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# OS/editor
+.DS_Store
+*.log
+
+# Docker
+frontend/.env
