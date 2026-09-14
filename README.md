@@ -30,6 +30,12 @@ playback position as a function of elapsed time. I've explained the full
 reasoning below, along with the assumptions I made anywhere the spec left
 room for interpretation.
 
+**A note on AI usage:** I used AI assistance for parts of the frontend
+(React components and styling) to move faster on UI plumbing, while the
+backend design — the sync algorithm, the storage layer, and the API
+contract — is my own work and reasoning, which is what I've written up
+in detail below.
+
 ---
 
 ## Project structure
@@ -315,3 +321,34 @@ interpretation, and why I made them:
   similar) instead, since local disk doesn't scale across multiple
   backend instances and, on most free hosting tiers, doesn't survive a
   redeploy either — flagged again above under Deployment.
+
+---
+
+## What I'd add with more time
+
+A few things I deliberately left out to keep the submission focused on
+the core sync/playback problem, but would build next:
+
+- **Delete/remove media items.** Right now there's `POST
+  /api/windows/{id}/media` to add an item, but no matching delete — once
+  something's in a playlist it's there for good. A real deployment would
+  need `DELETE /api/windows/{id}/media/{itemId}`, plus cleaning up the
+  matching file under `data/uploads/` if the item was an uploaded file
+  rather than an external URL, so storage doesn't grow forever.
+- **Reordering playlist items.** Items always append to the end; there's
+  no way to move an item earlier/later in a window's sequence without
+  deleting and re-adding everything after it.
+- **Editing or removing whole windows.** Windows are currently fixed to
+  what's seeded at startup — there's no create/delete-window endpoint,
+  only add-media-to-an-existing-window.
+- **WebSockets/SSE instead of polling**, as mentioned above under
+  Assumptions — would cut sync latency from ~1s to near-instant and
+  reduce request volume at scale.
+- **Basic auth on the admin endpoints** (`add media`, `sync`, upload) —
+  right now anyone with the backend URL can modify playlists or trigger
+  sync, which is fine for this assignment but not for a real deployment.
+- **Tests.** I focused my time on getting the sync/timing logic correct
+  by hand-testing against the running app rather than writing automated
+  tests — a table-driven test for `currentItemForWindow` covering
+  playlist-boundary edge cases (item starts exactly at `position`, empty
+  playlist, single-item playlist) would be the first thing I'd add.
