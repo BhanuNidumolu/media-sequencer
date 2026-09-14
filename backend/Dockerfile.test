@@ -1,0 +1,10 @@
+# Runs the backend's Go test suite inside a container — no local Go
+# toolchain needed. This intentionally does NOT produce a runnable server;
+# it's only used by the `backend-tests` service in docker-compose.yml.
+FROM golang:1.25-alpine
+WORKDIR /app
+COPY . .
+# Same as the main Dockerfile: resolves the pure-Go SQLite driver and
+# writes go.sum (needs network access during `docker compose build`).
+RUN go mod tidy
+CMD ["go", "test", "./...", "-v"]

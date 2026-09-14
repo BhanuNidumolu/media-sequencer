@@ -21,3 +21,13 @@ services:
       - "5173:80"
     depends_on:
       - backend
+
+  # Runs `go test ./... -v` inside a Go container. Not part of the normal
+  # `docker compose up` — the "test" profile keeps it out of the way of
+  # the real backend/frontend services, so it only runs when asked for
+  # explicitly (see README "Running tests").
+  backend-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    profiles: ["test"]
