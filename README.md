@@ -1,6 +1,6 @@
 # Multi-Window Media Sequencer
 
-**Submitted by:** [Your Name]
+**Submitted by:** N BHANU PRASAD
 **Role:** Backend Development Intern — Assignment Submission
 **Stack:** Go (backend) + React (frontend)
 
