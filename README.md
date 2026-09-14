@@ -4,6 +4,12 @@
 **Role:** Backend Development Intern — Assignment Submission
 **Stack:** Go (backend) + React (frontend)
 
+**Live URLs:**
+- Frontend: https://media-sequencer-eight.vercel.app
+- Backend: https://media-sequencer-mrdb.onrender.com
+
+**Repo:** https://github.com/BhanuNidumolu/media-sequencer
+
 ## What this is
 
 This is my submission for the Multi-Window Media Sequencer assignment.
@@ -17,9 +23,12 @@ its own sequence exactly where it would have been anyway.
 - **Frontend:** React (Vite)
 - **Persistence:** SQLite (embedded, single-file database)
 
-I've explained my reasoning for each of these choices below, especially
-the persistence and sync design, since those were the two decisions I
-spent the most time on.
+The sync mechanism was the part I found most interesting to design —
+getting every window to resume exactly where it should be, with no
+special-case "resume" logic, just falls out naturally from computing
+playback position as a function of elapsed time. I've explained the full
+reasoning below, along with the assumptions I made anywhere the spec left
+room for interpretation.
 
 ---
 
@@ -77,10 +86,11 @@ every window returns that same item, ignoring its own playlist position
 for that moment. Once the sync expires (or if there isn't one), each
 window falls back to its own time-based computation from step 1.
 
-The nice side effect of doing it this way: resuming after sync needed no
-special-case logic. No window's underlying position was ever touched, so
-once the sync ends it just continues exactly where the time formula says
-it should be.
+The part I liked most about this approach: resuming after sync needed no
+special-case logic at all. No window's underlying position was ever
+touched, so once the sync ends it just continues exactly where the time
+formula says it should be — the "resume" behavior is really just the
+absence of an active override, not code I had to write separately.
 
 **On the 5-hour cycle:** I read "the total play size for each window
 must be treated as 5 hours" as a ceiling on the loop length rather than a
@@ -128,6 +138,7 @@ if it doesn't exist, and seeds it with 3 example windows on first run
 only.
 
 Environment variables (all optional, sensible defaults shown):
+
 | Variable          | Default              | Purpose                                  |
 |-------------------|----------------------|-------------------------------------------|
 | `PORT`             | `8080`               | HTTP port                                 |
@@ -150,7 +161,8 @@ current playback state.
 
 ## API documentation
 
-All responses are JSON. Base path assumed: `http://localhost:8080`.
+All responses are JSON. Base path assumed: `http://localhost:8080`
+(or `https://media-sequencer-mrdb.onrender.com` for the deployed version).
 
 ### `GET /api/windows`
 Returns every window with its full playlist (used by the admin forms).
@@ -214,7 +226,7 @@ Content-Type must be `multipart/form-data` with the file under field name
 to 20MB.
 ```json
 // response
-{ "url": "http://localhost:8080/uploads/u-1234567890.jpg", "type": "image" }
+{ "url": "https://media-sequencer-mrdb.onrender.com/uploads/u-1234567890.jpg", "type": "image" }
 ```
 The returned `url` is then passed straight to `POST
 /api/windows/{id}/media` - uploading and pasting a link both end up
@@ -228,34 +240,29 @@ Plain `200 ok` — for uptime checks on the hosting platform.
 
 ## Deployment
 
-### Backend (Go)
-Any host that can run a Go binary works (Render, Railway, Fly.io, a plain
-VM). I used **Render** — general steps:
-1. New → Web Service → connect this repo, root directory `backend`.
+Both pieces are live right now — see Live URLs at the top. Here's how
+I set them up:
+
+### Backend (Go) — Render
+1. New → Web Service → connected this repo, root directory `backend`.
 2. Build command: `go mod tidy && go build -o server .`
 3. Start command: `./server`
-4. Set env var `FRONTEND_ORIGIN` to the deployed frontend's URL once you
-   have it, and `BACKEND_PUBLIC_URL` to this service's own URL (e.g.
-   `https://your-app.onrender.com`) so uploaded-file links resolve
-   correctly.
+4. Env vars: `FRONTEND_ORIGIN` set to the deployed frontend's URL, and
+   `BACKEND_PUBLIC_URL` set to this service's own URL, so uploaded-file
+   links resolve correctly.
 5. **Persistence note:** Render's free tier filesystem is ephemeral (it
-   resets on redeploy) - this affects both `store.db` and anything in
+   resets on redeploy) — this affects both `store.db` and anything in
    `data/uploads/`. If data needs to survive redeploys, either use a paid
    plan with a persistent disk mounted at `DATA_FILE`'s directory, or
    swap SQLite for a managed database (e.g. Postgres) plus object storage
    (S3-style) for uploads (see Assumptions below for how contained that
    change would be).
 
-### Frontend (React)
-Any static host works (Vercel, Netlify, Cloudflare Pages). For
-**Vercel**:
-1. Import this repo, set root directory to `frontend`.
-2. Framework preset: Vite.
-3. Set env var `VITE_API_URL` to the deployed backend's URL.
-4. Deploy — Vercel runs `npm run build` and serves `dist/` automatically.
-
-**Live URLs:** [add after deploying]
-**Repo:** [add your GitHub link]
+### Frontend (React) — Vercel
+1. Imported this repo, root directory `frontend`.
+2. Framework preset: Vite (auto-detected).
+3. Env var `VITE_API_URL` set to the deployed backend's URL.
+4. Vercel runs `npm run build` and serves `dist/` automatically.
 
 ---
 
@@ -275,14 +282,15 @@ interpretation, and why I made them:
   under concurrent requests rather than working around them with retries.
   The tradeoff is the same as any embedded database: it doesn't support
   multiple backend instances writing concurrently the way Postgres would.
-  I originally built this with a JSON file instead of SQLite, specifically
-  to test how contained that swap would be — it ended up changing only
-  the method bodies inside `store.go` (`AllWindows`, `AddMediaToWindow`,
-  `SetSyncState`, etc., replacing file reads/writes with SQL queries).
-  The handlers, the sync logic, and every API response stayed identical,
-  since they only ever depended on `Store`'s public method signatures,
-  never on how it stored things internally. The same would hold true for
-  swapping SQLite for Postgres later.
+  I actually built this with a JSON file first, then deliberately swapped
+  it for SQLite to see how contained that change would really be — it
+  ended up touching only the method bodies inside `store.go`
+  (`AllWindows`, `AddMediaToWindow`, `SetSyncState`, etc.), replacing file
+  reads/writes with SQL queries. The handlers, the sync logic, and every
+  API response stayed identical, since they only ever depended on
+  `Store`'s public method signatures, never on how it stored things
+  internally. The same would hold true for swapping SQLite for Postgres
+  later, if this needed to scale beyond a single instance.
 - **Polling instead of WebSockets.** The frontend polls `/api/state`
   every second instead of holding a persistent connection. This keeps
   deployment simple (no special hosting requirements for long-lived
