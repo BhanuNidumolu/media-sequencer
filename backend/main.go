@@ -10,18 +10,12 @@ import (
 func main() {
 	dataFile := getEnv("DATA_FILE", "./data/store.db")
 	port := getEnv("PORT", "8080")
-	// In production, set FRONTEND_ORIGIN to your deployed React app's URL,
-	// e.g. https://your-app.vercel.app  (no trailing slash).
-	// "*" is fine for local development only.
+	
 	frontendOrigin := getEnv("FRONTEND_ORIGIN", "*")
-	// In production, set BACKEND_PUBLIC_URL to this service's own public
-	// URL, e.g. https://your-app.onrender.com (no trailing slash). It's
-	// used to build absolute URLs for uploaded files, since the frontend
-	// runs on a different origin and needs a full link, not a relative one.
+	
 	publicURL := getEnv("BACKEND_PUBLIC_URL", "http://localhost:"+port)
 
-	// Uploaded files live alongside the SQLite database so both are
-	// covered by the same persistent volume/disk in deployment.
+	
 	uploadsDir := filepath.Join(filepath.Dir(dataFile), "uploads")
 	if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 		log.Fatalf("failed to create uploads dir: %v", err)
